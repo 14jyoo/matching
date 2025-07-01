@@ -1,0 +1,149 @@
+first to generate the security table where it contains security_id, cusip(9-digits from isin), isin(country code - 2, cusip-9digit, 1-security code),instrument(equity', 'fixed income', 'derivatives', 'commodity', 'currency',
+    'cash equivalent', 'real estate', 'mutual fund', 'etf',
+    'private equity', 'hedge fund', 'structured product') nd custodian_name('State Street', 'BNY Mellon', 'Northern Trust', 'HDFC Custodian').
+
+let us say the security table has 1000 rows. and then by using this security table. we need to generate settlement table which contains settlement_id(in this table it should be unique, no repeat of the id), sender_id(from company file.csv, receiver_id(from company file.csv)(no two companies should be same for sender and receiver), security_id(randomly from security table.csv), settlment_date.
+
+and then the trade table, which contains trade_id(unique, should not repeat even for the large data geeration), settlement_id, maker_id, checker_id, supervisor_id, quantity(integer), price(float), amount(quantity*price), type(long/short), status(default-pending), company_id(one is sender and the other is recevier where the settlement id for it will become same, so the 2 settlement id will come with different trade id(unique)), created_at(today and diff timestamp), updated_at
+
+need 10000 trades in the trade table, we will segregate view columns like that becomes broker trade(10000). fields are: trade+_id(unique), isin, quantity, price, trade_date, settlemrnt_date, counterparty, side(long/short be consider as buy/sell respectively), created_at, broker_id.
+
+lets see broker data again. now give the script for the security, settlement, and trade.
+
+
+
+import pandas as pd
+import random
+import string
+from itertools import permutations
+from datetime import datetime, timedelta, date
+
+# -----------------------
+# 1. Generate Security Table (1000 rows)
+# -----------------------
+
+instrument_types = [
+    'equity', 'fixed income', 'derivatives', 'commodity', 'currency',
+    'cash equivalent', 'real estate', 'mutual fund', 'etf',
+    'private equity', 'hedge fund', 'structured product'
+]
+custodian_names = ['State Street', 'BNY Mellon', 'Northern Trust', 'HDFC Custodian']
+
+used_sec_ids = set()
+security_data = []
+
+def generate_unique_sec_id():
+    while True:
+        num = random.randint(1000, 9999)
+        sec_id = f"SEC{num}"
+        if sec_id not in used_sec_ids:
+            used_sec_ids.add(sec_id)
+            return sec_id
+
+def generate_cusip():
+    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=9))
+
+def generate_isin(cusip):
+    country_code = random.choice(['US', 'IN', 'GB', 'DE', 'JP'])
+    check_digit = str(random.randint(0, 9))
+    return country_code + cusip + check_digit
+
+for _ in range(1000):
+    security_id = generate_unique_sec_id()
+    cusip = generate_cusip()
+    isin = generate_isin(cusip)
+    instrument = random.choice(instrument_types)
+    custodian_name = random.choice(custodian_names)
+    security_data.append([security_id, cusip, isin, instrument, custodian_name])
+
+security_df = pd.DataFrame(security_data, columns=['security_id', 'cusip', 'isin', 'instrument', 'custodian_name'])
+security_df.to_csv("security_table.csv", index=False)
+
+# -----------------------
+# 2. Generate Settlement Table (5000 rows)
+# -----------------------
+
+company_df = pd.read_csv("company_details.csv")  # Should have 'company_id'
+company_ids = company_df['company_id'].tolist()
+
+# Generate all possible unique sender ≠ receiver pairs
+all_possible_pairs = list(permutations(company_ids, 2))
+random.shuffle(all_possible_pairs)
+
+used_sett_ids = set()
+settlement_data = []
+
+def generate_unique_sett_id():
+    while True:
+        sid = f"SETT{random.randint(1000, 9999)}"
+        if sid not in used_sett_ids:
+            used_sett_ids.add(sid)
+            return sid
+
+for i in range(5000):
+    sender_id, receiver_id = all_possible_pairs[i]  # Ensures no duplicates
+    settlement_id = generate_unique_sett_id()
+    security_id = random.choice(security_df['security_id'])
+    settlement_date = (date.today() + timedelta(days=random.randint(1, 60))).isoformat()
+    settlement_data.append([settlement_id, sender_id, receiver_id, security_id, settlement_date])
+
+settlement_df = pd.DataFrame(settlement_data, columns=[
+    'settlement_id', 'sender_id', 'receiver_id', 'security_id', 'settlement_date'
+])
+settlement_df.to_csv("settlement_instructions_extended.csv", index=False)
+
+# -----------------------
+# 3. Generate Trade Table (10,000 rows)
+# -----------------------
+
+used_trade_ids = set()
+trade_data = []
+today = datetime.now()
+
+def generate_unique_trade_id():
+    while True:
+        tid = f"TRD{random.randint(10000, 99999)}"
+        if tid not in used_trade_ids:
+            used_trade_ids.add(tid)
+            return tid
+
+# Each settlement_id used twice (sender and receiver side)
+for i in range(5000):
+    row = settlement_df.iloc[i]
+    settlement_id = row['settlement_id']
+    sender_id = row['sender_id']
+    receiver_id = row['receiver_id']
+    settlement_date = row['settlement_date']
+
+    for side, company_id in zip(['long', 'short'], [sender_id, receiver_id]):
+        trade_id = generate_unique_trade_id()
+        maker_id, checker_id, supervisor_id = random.sample(company_ids, 3)
+        quantity = random.randint(10, 1000)
+        price = round(random.uniform(100, 1000), 2)
+        amount = round(quantity * price, 2)
+        status = "pending"
+        created_at = (today - timedelta(minutes=random.randint(1, 100000))).strftime('%Y-%m-%d %H:%M:%S')
+        updated_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+        trade_data.append([
+            trade_id, settlement_id, maker_id, checker_id, supervisor_id,
+            quantity, price, amount, side, status, company_id,
+            created_at, updated_at
+        ])
+
+trade_df = pd.DataFrame(trade_data, columns=[
+    'trade_id', 'settlement_id', 'maker_id', 'checker_id', 'supervisor_id',
+    'quantity', 'price', 'amount', 'type', 'status', 'company_id',
+    'created_at', 'updated_at'
+])
+trade_df.to_csv("trade_table.csv", index=False)
+
+# -----------------------
+# DONE
+# -----------------------
+
+print("✅ All datasets generated:")
+print(f"- security_table.csv: {len(security_df)} rows")
+print(f"- settlement_instructions_extended.csv: {len(settlement_df)} rows")
+print(f"- trade_table.csv: {len(trade_df)} rows")
+
